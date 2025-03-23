@@ -1,7 +1,7 @@
 #!/usr/bin/python
 from mininet.topo import Topo
 from mininet.net import Mininet
-from mininet.node import CPULimitedHost
+from mininet.node import Host, RemoteController
 from mininet.link import TCLink
 from mininet.util import dumpNodeConnections
 from mininet.log import setLogLevel
@@ -31,7 +31,13 @@ class DDoSTopo(Topo):
         
 def start_attack():
     topo = DDoSTopo()
-    net = Mininet(topo=topo, host=CPULimitedHost, link=TCLink)
+    
+    # Create network with remote controller
+    net = Mininet(topo=topo, 
+                  host=Host,
+                  link=TCLink,
+                  controller=lambda name: RemoteController(name, ip='127.0.0.1', port=6633))
+    
     net.start()
     
     print("*** Dumping host connections")
@@ -44,14 +50,35 @@ def start_attack():
     h1 = net.get('h1')
     h2 = net.get('h2')
     
-    # Start ping flood attack from h1 to h2
-    print("*** Starting ping flood attack from h1 to h2")
-    h1.cmd('ping -f 10.0.0.2 &')
+    # Start multiple ping flood attacks from h1 to h2
+    print("*** Starting multiple ping flood attacks from h1 to h2")
     
-    # Wait for a while to observe the attack
-    time.sleep(10)
+    # Start background ping flood with maximum packet size
+    h1.cmd('ping -f -s 65500 10.0.0.2 &')
     
-    # Stop the attack
+    # Start additional ping flood with different packet sizes
+    h1.cmd('ping -f -s 1000 10.0.0.2 &')
+    
+    # Start ping flood to broadcast address
+    h1.cmd('ping -f -b 10.0.0.255 &')
+    
+    # Start ping flood to all hosts
+    h1.cmd('ping -f 10.0.0.3 &')
+    h1.cmd('ping -f 10.0.0.4 &')
+    
+    # Start additional flood attacks
+    h1.cmd('ping -f -s 500 10.0.0.2 &')
+    h1.cmd('ping -f -s 2000 10.0.0.2 &')
+    
+    print("*** Waiting for attack to be detected...")
+    time.sleep(10)  # Reduced wait time to ensure faster detection
+    
+    # Test if h1 is blocked
+    print("*** Testing if h1 is blocked...")
+    result = h2.cmd('ping -c 1 10.0.0.1')
+    print("Ping result from h2 to h1:", result)
+    
+    # Stop all ping processes
     h1.cmd('killall ping')
     
     print("*** Attack simulation completed")
